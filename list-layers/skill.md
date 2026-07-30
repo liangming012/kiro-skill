@@ -74,6 +74,23 @@ powershell -ExecutionPolicy Bypass -File "C:\Users\yanliangming.OASOFFICE\.kiro\
           "name": "banner",
           "type": "NORMAL",
           "visible": true
+        },
+        {
+          "path": "Header/title",
+          "name": "title",
+          "type": "TEXT",
+          "visible": true,
+          "textStyle": {
+            "fontSize": "24px",
+            "fontName": "ArialMT",
+            "fauxBold": false,
+            "fauxItalic": false,
+            "color": "#ffffff",
+            "justification": "CENTER",
+            "leading": "auto",
+            "tracking": 0,
+            "contents": "Hello World"
+          }
         }
       ]
     }
@@ -90,6 +107,21 @@ powershell -ExecutionPolicy Bypass -File "C:\Users\yanliangming.OASOFFICE\.kiro\
 | `type` | 图层类型（Group / NORMAL / TEXT 等） |
 | `visible` | 图层是否可见 |
 | `children` | 子图层数组（仅 Group 类型） |
+| `textStyle` | 文本样式对象（仅 TEXT 类型图层） |
+
+### textStyle 子字段（仅 TEXT 图层）
+
+| 字段 | 说明 |
+|------|------|
+| `fontSize` | 字号，单位 px（如 `"24px"`） |
+| `fontName` | 字体 PostScript 名称（如 `"ArialMT"`、`"NotoSansCJKsc-Bold"`） |
+| `fauxBold` | 是否启用仿粗体（`true` / `false`） |
+| `fauxItalic` | 是否启用仿斜体（`true` / `false`） |
+| `color` | 文字颜色，十六进制格式（如 `"#ffffff"`） |
+| `justification` | 对齐方式（`LEFT` / `CENTER` / `RIGHT`） |
+| `leading` | 行距，单位 px；自动行距时为 `"auto"` |
+| `tracking` | 字间距（整数值，0 为默认） |
+| `contents` | 文本内容 |
 
 ## 注意事项
 

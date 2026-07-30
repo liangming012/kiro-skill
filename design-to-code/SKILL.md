@@ -418,68 +418,81 @@ todo_list create:
 
 **文字用 CSS 实现时的样式提取**：
 
-当判定文字用 CSS 实现时，需要从设计稿的文字图层（type 类型）中提取以下样式属性：
+当判定文字用 CSS 实现时，直接从 `list-layers` 输出的 JSON 中读取 TEXT 图层的 `textStyle` 字段，即可获得完整的样式信息：
 
 ```
-# 从 PSD 文字图层可获取的信息（通过 Photoshop 查看）：
-# - font-size（字号）
-# - font-family（字体）
-# - font-weight（字重/粗细）
-# - color（颜色，RGBA）
-# - line-height（行高）
-# - letter-spacing（字间距）
-# - text-align（对齐方式）
+# 从 list-layers 输出的 textStyle 字段可直接获取：
+# - fontSize（字号，px）
+# - fontName（字体 PostScript 名称）
+# - fauxBold / fauxItalic（仿粗体 / 仿斜体）
+# - color（颜色，十六进制）
+# - justification（对齐方式：LEFT / CENTER / RIGHT）
+# - leading（行距，px 或 "auto"）
+# - tracking（字间距，整数值）
+# - contents（文本内容）
 ```
 
-**提取方式**：由于 `list-layers` skill（Photoshop COM）不输出文字样式信息，文字样式需要通过以下方式获取：
-1. **从设计稿视觉效果推断**：通过 Photoshop 打开设计稿查看文字图层属性（字号、颜色、字体等）
-2. **从项目已有代码参考**：如果项目中已有类似文字样式，参考现有 CSS 设置
-3. **从截图对比调整**：先设置一个估算值，通过 Playwright 截图对比后微调
-
-在读取图层结构时（使用 `list-layers` skill），对 `type: "TEXT"` 的图层，可以获取图层名称（通常包含文字内容），但不包含字号、颜色等样式信息。
+**提取方式**：`list-layers` skill 已支持输出 TEXT 图层的样式信息。在读取图层结构时（使用 `list-layers` skill），对 `type: "TEXT"` 的图层，会自动输出 `textStyle` 字段，包含字号、字体、粗细、颜色、对齐方式、行距、字间距和文本内容：
 
 ```json
 {
-  "text_info": {
-    "text": "Summer Sale",          // 文字内容
-    "font_size": 36.0,              // 字号（pt，对应设计稿像素值）
-    "font_family": "PingFang SC",   // 字体
-    "font_weight": "bold",          // 字重（normal / bold）
-    "color": {                      // 颜色
-      "r": 255, "g": 107, "b": 53, "a": 1.0,
-      "hex": "#FF6B35",
-      "rgba": "rgba(255, 107, 53, 1.0)"
-    },
-    "line_height": 48.0,            // 行高（pt）
-    "letter_spacing": 2.0,          // 字间距（tracking）
-    "text_align": "center"          // 对齐方式
+  "path": "Header/title",
+  "name": "title",
+  "type": "TEXT",
+  "visible": true,
+  "textStyle": {
+    "fontSize": "36px",             // 字号（px）
+    "fontName": "PingFangSC-Semibold", // 字体 PostScript 名称
+    "fauxBold": false,              // 是否仿粗体
+    "fauxItalic": false,            // 是否仿斜体
+    "color": "#ff6b35",             // 颜色（十六进制）
+    "justification": "CENTER",      // 对齐方式（LEFT / CENTER / RIGHT）
+    "leading": "48px",              // 行距（px），自动行距时为 "auto"
+    "tracking": 50,                 // 字间距（整数值，0 为默认）
+    "contents": "Summer Sale"       // 文本内容
   }
 }
 ```
 
-直接从图层结构 JSON 中读取 `text_info` 字段即可获取样式数据，无需额外操作。如果某些字段提取失败（PSD 文件结构差异），则该字段不会出现在输出中，此时通过视觉观察设计稿效果图来估算缺失的值。
+直接从图层结构 JSON 中读取 `textStyle` 字段即可获取样式数据，无需额外操作。如果某些字段提取失败（PSD 文件结构差异），则该字段值为 `null`，此时通过视觉观察设计稿效果图来估算缺失的值。
+
+**字段映射到 CSS 的规则**：
+
+| textStyle 字段 | CSS 属性 | 转换说明 |
+|---------------|----------|----------|
+| `fontSize` | `font-size` | 移动端 ÷100 转 rem，PC 端直接用 px |
+| `fontName` | `font-family` | PostScript 名称需映射为 CSS font-family（如 `PingFangSC-Semibold` → `'PingFang SC', sans-serif`） |
+| `fauxBold: true` | `font-weight: bold` | fauxBold 为 true 时设为 bold/700 |
+| `fauxItalic: true` | `font-style: italic` | fauxItalic 为 true 时设为 italic |
+| `color` | `color` | 直接使用十六进制值 |
+| `justification` | `text-align` | LEFT→left, CENTER→center, RIGHT→right |
+| `leading` | `line-height` | 可计算比例（leading ÷ fontSize），"auto" 时不设置或使用 normal |
+| `tracking` | `letter-spacing` | tracking ÷ 1000 × fontSize = letter-spacing（px），为 0 时不设置 |
 
 提取后生成对应的 CSS 样式：
 
 ```scss
-// 示例：从设计稿文字图层提取的样式
+// 示例：从 textStyle 字段直接转换为 CSS 样式
+// textStyle: { fontSize: "36px", fontName: "PingFangSC-Semibold", fauxBold: false, color: "#ff6b35", leading: "48px", tracking: 50, justification: "CENTER" }
 .title-text {
-  font-size: 32px;           // PC 端直接用 px / 移动端转 rem（÷100）
-  font-family: 'PingFang SC', sans-serif;
-  font-weight: 600;          // bold / 600 / 700 等
-  color: #FF6B35;            // 从图层颜色提取
-  line-height: 1.5;          // 行高比例或具体值
-  letter-spacing: 2px;       // 字间距（PC 端 px / 移动端 rem）
-  text-align: center;        // 对齐方式
+  font-size: 32px;           // PC 端直接用 px / 移动端转 rem（÷100）→ 0.36rem（36÷100）
+  font-family: 'PingFang SC', sans-serif;  // 从 fontName "PingFangSC-Semibold" 映射
+  font-weight: 600;          // fontName 含 "Semibold"，映射为 600
+  color: #ff6b35;            // 直接使用 textStyle.color
+  line-height: 1.33;         // leading 48px ÷ fontSize 36px ≈ 1.33
+  letter-spacing: 1.8px;     // tracking 50 ÷ 1000 × 36 = 1.8px（移动端 ÷100 转 rem）
+  text-align: center;        // justification "CENTER" → center
 }
 ```
 
 **样式提取注意事项**：
 - 字号单位遵循 `image-sizing-guide` 规则：移动端 ÷ 100 转 rem，PC 端直接 px
-- 颜色值优先使用 HEX 格式（如 `#FF6B35`），有透明度时使用 RGBA
+- 颜色值直接使用 textStyle.color（十六进制格式），有透明度需求时手动改为 RGBA
+- fontName 是 PostScript 名称，需要映射为 CSS font-family（如 `ArialMT` → `Arial`，`PingFangSC-Regular` → `'PingFang SC'`）
+- 字重判断：优先看 fontName 中的后缀（`-Bold`/`-Semibold`/`-Medium`/`-Regular`/`-Light`），其次看 fauxBold 字段
+- line-height 如果能整除为比例值（如 48px / 32px = 1.5）则使用比例，leading 为 "auto" 时不设置该属性
+- letter-spacing 计算公式：tracking ÷ 1000 × fontSize（px），为 0 时不写该属性
 - 如果设计稿使用的字体项目中未引入，优先使用项目已有的相近字体作为替代，并在摘要中备注
-- line-height 如果能整除为比例值（如 48px / 32px = 1.5）则使用比例，否则使用具体值
-- letter-spacing 为 0 时不写该属性
 
 **多语言图片尺寸统一规则（关键）**：
 
@@ -2390,6 +2403,8 @@ Remove-Item -Force <项目图片目录>/*.bak.* -ErrorAction SilentlyContinue
 ### 调用 list-layers 和 ps-export skill
 
 - 图层结构读取使用 `list-layers` skill（Photoshop COM），脚本路径：`~/.kiro/skills/list-layers/list-layers.ps1`
+  - 输出完整图层树结构（含隐藏图层），path 字段可直接用于 ps-export
+  - **TEXT 类型图层会自动输出 `textStyle` 字段**（含 fontSize、fontName、fauxBold、fauxItalic、color、justification、leading、tracking、contents），可直接用于 CSS 样式提取，无需手动查看 Photoshop
 - PNG 导出使用 `ps-export` skill（Photoshop COM），脚本路径：`~/.kiro/skills/ps-export/ps-export.ps1`
 - 图像后处理使用 Pillow（通过 `~/.kiro/skills/design-to-code/.venv/Scripts/python.exe`）
 - 辅助脚本路径：`~/.kiro/skills/design-to-code/scripts/`（含 `img_unify_size.py`、`playwright_screenshot.*` 等）
