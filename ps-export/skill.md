@@ -106,3 +106,12 @@ powershell -ExecutionPolicy Bypass -File "C:\Users\yanliangming.OASOFFICE\.kiro\
 - 支持 .psd 和 .psb 格式
 - 单独导出图层时会自动裁剪透明区域
 - 建议先用 list-layers skill 获取正确的图层路径
+- 支持 `-Timeout` 参数（默认 300 秒），超时后自动终止脚本
+
+## AI 调用注意事项
+
+- 脚本通过后台进程执行，Photoshop 操作（打开文件、导出图层）耗时较长，属于正常现象
+- **检查输出频率：每隔 5 秒读取一次终端输出即可，不要连续密集轮询**
+- 对于大型 PSB 文件（数百图层），打开文件可能需要 1-3 分钟，导出单个图层需要 30 秒到 2 分钟
+- 脚本完成的标志是输出中出现 `Done!`（成功）或 `ERROR:`（失败）或进程退出
+- 如果长时间（超过 Timeout 值）没有新输出，说明 Photoshop 可能卡死，看门狗会自动终止脚本
