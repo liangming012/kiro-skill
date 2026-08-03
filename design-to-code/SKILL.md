@@ -87,6 +87,148 @@ todo_list create:
 
 ---
 
+### 🔧 前置检查：Python 环境与虚拟环境自动初始化
+
+**在执行任何涉及 Python 的操作之前（第四步 Pillow 获取图片尺寸、第六步导出后处理、第七步格式转换、第八步 Playwright 截图等），必须先确认系统 Python 可用且虚拟环境已就绪。**
+
+**执行时机**：在创建 todo_list 之后、第一步开始之前，执行一次环境检测。
+
+#### 第 1 步：检测系统 Python 是否可用
+
+**检测策略**：直接输出系统环境变量和用户环境变量中 PATH 的完整内容，由 AI 分析其中是否包含 Python 相关路径（如 `Python311`、`Python39`、`python37`、`Anaconda3`、`miniconda3`、`pyenv` 等）。不做硬编码匹配，因为 Python 安装目录名可能有多种形式。
+
+**Windows 检测命令**：
+
+```powershell
+# 输出系统级 PATH（Machine）和用户级 PATH（User）的所有目录，供 AI 分析
+Write-Host "=== 系统环境变量 PATH (Machine) ==="
+([System.Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::Machine)) -split ";" | ForEach-Object { if ($_.Trim()) { Write-Host $_ } }
+Write-Host ""
+Write-Host "=== 用户环境变量 PATH (User) ==="
+([System.Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::User)) -split ";" | ForEach-Object { if ($_.Trim()) { Write-Host $_ } }
+```
+
+**AI 分析规则**：
+
+从输出的所有路径中，识别包含 Python 的目录。常见模式包括但不限于：
+
+| 路径模式 | 说明 |
+|----------|------|
+| `*\Python3*\` | 官方安装（如 `C:\Python311\`、`C:\Python39\`） |
+| `*\Python\Python3*\` | 官方安装默认路径（如 `C:\Users\xxx\AppData\Local\Programs\Python\Python311\`） |
+| `*\python*\` | 小写变体 |
+| `*\Anaconda3*\` | Anaconda 环境 |
+| `*\miniconda3*\` | Miniconda 环境 |
+| `*\pyenv\*\` | pyenv-win 管理的版本 |
+| `*\scoop\apps\python*\` | Scoop 安装 |
+| `*\WindowsApps\*` | Microsoft Store 安装的 Python |
+
+**找到疑似 Python 目录后**，执行验证：
+
+```powershell
+# 用找到的目录验证 Python 是否可用（将 <找到的目录> 替换为实际路径）
+& "<找到的目录>\python.exe" --version
+```
+
+如果从 PATH 目录中找不到任何 Python 相关路径，再检查 py launcher：
+
+```powershell
+# 兜底：检查 Windows Python Launcher
+if (Test-Path (Join-Path $env:SystemRoot "py.exe")) { & py --version } else { Write-Host "py launcher 也不存在" }
+```
+
+**macOS/Linux 检测命令**：
+
+```bash
+# 输出 PATH 中的所有目录，供 AI 分析
+echo "=== 环境变量 PATH ==="
+echo "$PATH" | tr ':' '\n'
+```
+
+**AI 分析后的操作**：
+
+1. 从输出中识别出包含 Python 可执行文件的目录路径
+2. 用该路径下的 `python.exe`（Windows）或 `python3`/`python`（macOS/Linux）执行 `--version` 验证
+3. 确认版本 ≥ 3.8 后，将完整路径记录为 `$pythonCmd`，供后续步骤使用
+4. 如果分析所有路径后确认无 Python → 中断流程并提示用户安装
+
+**如果系统未安装 Python**：
+
+立即中断流程，向用户提示以下安装方式并等待用户确认安装完成后再继续：
+
+| 操作系统 | 推荐安装方式 | 命令 |
+|----------|-------------|------|
+| Windows | Python 官网安装包 | 访问 https://www.python.org/downloads/ 下载安装，安装时勾选 "Add Python to PATH" |
+| Windows | winget | `winget install Python.Python.3.11` |
+| Windows | scoop | `scoop install python` |
+| macOS | Homebrew | `brew install python@3.11` |
+| macOS | 官网安装包 | 访问 https://www.python.org/downloads/ |
+| Linux (Debian/Ubuntu) | apt | `sudo apt update && sudo apt install python3 python3-venv python3-pip` |
+| Linux (CentOS/RHEL) | dnf | `sudo dnf install python3 python3-pip` |
+
+**要求**：
+- Python 版本 ≥ 3.8
+- 安装后 `python`（或 `python3`）命令必须在 PATH 中可用
+- Windows 用户安装时**必须勾选 "Add Python to PATH"**，否则后续命令无法找到 Python
+
+**提示模板**：
+```
+❌ 系统未检测到 Python 环境，无法继续执行 design-to-code 流程。
+
+请先安装 Python（≥ 3.8），推荐方式：
+- Windows: 访问 https://www.python.org/downloads/ 下载安装（⚠️ 安装时务必勾选 "Add Python to PATH"）
+- macOS: brew install python@3.11
+- Linux: sudo apt install python3 python3-venv python3-pip
+
+安装完成后请告知我，我将继续执行。
+```
+
+#### 第 2 步：检测并初始化虚拟环境
+
+**前提**：第 1 步已确认系统 Python 可用。
+
+**检测逻辑**：检查 `~/.kiro/skills/design-to-code/.venv/Scripts/python.exe`（Windows）或 `~/.kiro/skills/design-to-code/.venv/bin/python3`（macOS/Linux）是否存在。
+
+```powershell
+# Windows：检测虚拟环境，不存在则自动创建
+if (-not (Test-Path "$env:USERPROFILE\.kiro\skills\design-to-code\.venv\Scripts\python.exe")) {
+  Write-Host "⚠️ 虚拟环境不存在，正在自动初始化..."
+  & $pythonCmd "$env:USERPROFILE\.kiro\skills\design-to-code\scripts\setup_venv.py"
+} else {
+  Write-Host "✅ 虚拟环境已就绪"
+}
+```
+
+```bash
+# macOS/Linux：检测虚拟环境，不存在则自动创建
+if [ ! -f ~/.kiro/skills/design-to-code/.venv/bin/python3 ]; then
+  echo "⚠️ 虚拟环境不存在，正在自动初始化..."
+  "$python_cmd" ~/.kiro/skills/design-to-code/scripts/setup_venv.py
+else
+  echo "✅ 虚拟环境已就绪"
+fi
+```
+
+**规则**：
+- ❗ 此检测只在每次 skill 激活时执行一次（第一步之前），后续步骤不再重复检测
+- ❗ 第 1 步检测到 Python 不存在时，**立即中断**并提示用户安装，不尝试执行 setup_venv.py（必然失败）
+- ❗ 第 2 步 `setup_venv.py` 执行失败时（如网络问题导致 pip 安装失败、venv 模块缺失等），告知用户具体错误信息并提供手动修复建议，不继续后续步骤
+- ❗ 如果虚拟环境已存在，直接跳过，不重复安装（幂等操作）
+- ❗ 初始化成功后，后续所有 Python 调用统一使用虚拟环境路径：`~/.kiro/skills/design-to-code/.venv/Scripts/python.exe`（Windows）或 `~/.kiro/skills/design-to-code/.venv/bin/python3`（macOS/Linux）
+
+**常见失败场景及处理**：
+
+| 失败场景 | 错误表现 | 修复建议 |
+|----------|----------|----------|
+| Python 未安装 | 系统/用户 PATH 中无 python.exe / python3.exe | 按上表安装 Python |
+| Python 已安装但未加入 PATH | 安装了但环境变量中找不到（常见于安装时未勾选 Add to PATH） | Windows: 重新安装并勾选 Add to PATH；或手动将 Python 安装目录（如 `C:\Users\<用户>\AppData\Local\Programs\Python\Python311\`）添加到用户环境变量 PATH |
+| PATH 中路径存在但文件已被删除 | 找到路径但 `--version` 执行失败 | 清理 PATH 中的无效路径，重新安装 Python |
+| venv 模块缺失 | `No module named 'venv'` | Linux: `sudo apt install python3-venv` |
+| 网络问题 | pip install 超时/连接失败 | 配置 pip 镜像源：`pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple` |
+| 权限问题 | Permission denied | Windows: 以管理员身份运行；Linux/macOS: 检查目录权限 |
+
+---
+
 ### 第一步：分析用户需求与项目现状
 
 1. **确认前端项目类型**：

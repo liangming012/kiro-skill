@@ -56,6 +56,10 @@
 
     var doc = app.activeDocument;
 
+    // --- 全局禁止弹出对话框，防止操作过程中弹窗阻塞脚本 ---
+    var globalDialogMode = app.displayDialogs;
+    app.displayDialogs = DialogModes.NO;
+
     // --- 解析参数 ---
     // 参数通过全局变量 __args（JSON 字符串）传入
     var hideList = [];
@@ -78,6 +82,7 @@
         }
     } catch (e) {
         // 参数解析失败，返回错误信息
+        app.displayDialogs = globalDialogMode;
         return "ERROR: Failed to parse arguments: " + e.message;
     }
 
@@ -155,26 +160,27 @@
         // 记录 flatten 前的历史状态
         var stateBeforeFlatten = doc.activeHistoryState;
 
-        doc.flatten();
+        try {
+            doc.flatten();
 
-        // 禁止弹出对话框
-        var savedDialogMode = app.displayDialogs;
-        app.displayDialogs = DialogModes.NO;
+            var pngOptions = new PNGSaveOptions();
+            pngOptions.compression = 6;
+            pngOptions.interlaced = false;
 
-        var pngOptions = new PNGSaveOptions();
-        pngOptions.compression = 6;
-        pngOptions.interlaced = false;
+            var saveFile = new File(exportPath);
+            doc.saveAs(saveFile, pngOptions, true, Extension.LOWERCASE);
 
-        var saveFile = new File(exportPath);
-        doc.saveAs(saveFile, pngOptions, true, Extension.LOWERCASE);
-
-        // 恢复对话框设置
-        app.displayDialogs = savedDialogMode;
+            results.push(exportPath);
+        } catch (flattenErr) {
+            warnings.push("WARNING: Full page export failed: " + flattenErr.message);
+        }
 
         // 恢复 flatten 前的状态（恢复图层结构）
-        doc.activeHistoryState = stateBeforeFlatten;
-
-        results.push(exportPath);
+        try {
+            doc.activeHistoryState = stateBeforeFlatten;
+        } catch (restoreErr) {
+            // 历史状态恢复失败，无法恢复
+        }
     } else {
         // --- 模式 B：导出指定图层 ---
         // 先检查所有路径是否存在
@@ -193,6 +199,8 @@
             for (var i = 0; i < originalVisibility.length; i++) {
                 originalVisibility[i].layer.visible = originalVisibility[i].visible;
             }
+            // 还原全局对话框设置
+            app.displayDialogs = globalDialogMode;
             return "ERROR: Layer not found: " + notFound.join(", ") + "\nPlease run list-layers.ps1 to check the correct layer path.";
         }
 
@@ -203,56 +211,84 @@
             var layerName = exportList[i].replace(/\//g, "_");
             var exportPath = folder + layerName + ".png";
 
-            // 创建临时文档（与原文档同尺寸，透明背景）
-            var tempDoc = app.documents.add(
-                doc.width, doc.height, doc.resolution,
-                layerName, NewDocumentMode.RGB, DocumentFill.TRANSPARENT
-            );
+            var tempDoc = null;
+            try {
+                // 创建临时文档（与原文档同尺寸，透明背景）
+                tempDoc = app.documents.add(
+                    doc.width, doc.height, doc.resolution,
+                    layerName, NewDocumentMode.RGB, DocumentFill.TRANSPARENT
+                );
 
-            // 将目标图层复制到临时文档
-            app.activeDocument = doc;
-            var dupLayer = layer.duplicate(tempDoc, ElementPlacement.INSIDE);
+                // 将目标图层复制到临时文档
+                app.activeDocument = doc;
+                layer.duplicate(tempDoc, ElementPlacement.INSIDE);
 
-            // 切换到临时文档，删除默认空图层
-            app.activeDocument = tempDoc;
-            if (tempDoc.layers.length > 1) {
-                tempDoc.layers[tempDoc.layers.length - 1].remove();
-            }
+                // 切换到临时文档，删除默认空图层
+                app.activeDocument = tempDoc;
+                if (tempDoc.layers.length > 1) {
+                    try {
+                        tempDoc.layers[tempDoc.layers.length - 1].remove();
+                    } catch (removeErr) {
+                        // 删除默认图层失败不影响后续，忽略
+                    }
+                }
 
-            // 合并所有图层但保持透明度（mergeVisibleLayers 不会填充白色背景）
-            tempDoc.mergeVisibleLayers();
+                // 合并所有图层但保持透明度
+                if (tempDoc.layers.length > 1) {
+                    try {
+                        tempDoc.mergeVisibleLayers();
+                    } catch (mergeErr) {
+                        tempDoc.close(SaveOptions.DONOTSAVECHANGES);
+                        app.activeDocument = doc;
+                        warnings.push("WARNING: mergeVisibleLayers failed for layer: " + exportList[i] + " (" + mergeErr.message + ")");
+                        continue;
+                    }
+                }
 
-            // 裁剪掉所有透明区域（按透明像素裁切）
-            tempDoc.trim(TrimType.TRANSPARENT, true, true, true, true);
+                // 裁剪掉所有透明区域（按透明像素裁切）
+                try {
+                    tempDoc.trim(TrimType.TRANSPARENT, true, true, true, true);
+                } catch (trimErr) {
+                    tempDoc.close(SaveOptions.DONOTSAVECHANGES);
+                    app.activeDocument = doc;
+                    warnings.push("WARNING: trim failed for layer: " + exportList[i] + " (" + trimErr.message + ")");
+                    continue;
+                }
 
-            // 检查裁剪后是否还有内容
-            if (tempDoc.width.as("px") <= 0 || tempDoc.height.as("px") <= 0) {
+                // 检查裁剪后是否还有内容
+                if (tempDoc.width.as("px") <= 0 || tempDoc.height.as("px") <= 0) {
+                    tempDoc.close(SaveOptions.DONOTSAVECHANGES);
+                    app.activeDocument = doc;
+                    warnings.push("WARNING: Layer has no visible content: " + exportList[i]);
+                    continue;
+                }
+
+                // 保存为 PNG
+                var pngOptions = new PNGSaveOptions();
+                pngOptions.compression = 6;
+                pngOptions.interlaced = false;
+
+                var saveFile = new File(exportPath);
+                tempDoc.saveAs(saveFile, pngOptions, true, Extension.LOWERCASE);
+
+                // 关闭临时文档（不保存）
                 tempDoc.close(SaveOptions.DONOTSAVECHANGES);
                 app.activeDocument = doc;
-                warnings.push("WARNING: Layer has no visible content: " + exportList[i]);
+                results.push(exportPath);
+
+            } catch (exportErr) {
+                // 任何未预期的错误：确保关闭临时文档、切回原文档
+                try {
+                    if (tempDoc) {
+                        tempDoc.close(SaveOptions.DONOTSAVECHANGES);
+                    }
+                } catch (closeErr) {
+                    // 关闭也失败，忽略
+                }
+                app.activeDocument = doc;
+                warnings.push("WARNING: Export failed for layer: " + exportList[i] + " (" + exportErr.message + ")");
                 continue;
             }
-
-            // 禁止弹出对话框（覆盖已有文件时不弹确认）
-            var savedDialogMode = app.displayDialogs;
-            app.displayDialogs = DialogModes.NO;
-
-            // 保存为 PNG
-            var pngOptions = new PNGSaveOptions();
-            pngOptions.compression = 6;
-            pngOptions.interlaced = false;
-
-            var saveFile = new File(exportPath);
-            tempDoc.saveAs(saveFile, pngOptions, true, Extension.LOWERCASE);
-
-            // 恢复对话框设置
-            app.displayDialogs = savedDialogMode;
-
-            // 关闭临时文档（不保存）
-            tempDoc.close(SaveOptions.DONOTSAVECHANGES);
-
-            app.activeDocument = doc;
-            results.push(exportPath);
         }
     }
 
@@ -260,6 +296,9 @@
     for (var i = 0; i < originalVisibility.length; i++) {
         originalVisibility[i].layer.visible = originalVisibility[i].visible;
     }
+
+    // --- 还原全局对话框设置 ---
+    app.displayDialogs = globalDialogMode;
 
     // 返回导出的文件路径（如有警告一并返回）
     var output = results.join("\n");

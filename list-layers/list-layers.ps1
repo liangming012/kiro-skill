@@ -16,12 +16,20 @@
 
 param(
     [Parameter(Mandatory=$true)]
-    [string]$PsdPath
+    [string]$PsdPath,
+    [int]$Timeout = 300
 )
 
 # --- 设置输出编码为 UTF-8（支持多语言字符显示）---
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
+
+# --- 超时看门狗 ---
+# 启动一个独立的后台 PowerShell 进程来监控超时
+# 当超时触发时，后台进程会杀掉本脚本进程
+$currentPid = $PID
+$watchdogProc = Start-Process -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy Bypass -Command `"Start-Sleep -Seconds $Timeout; Stop-Process -Id $currentPid -Force -ErrorAction SilentlyContinue`"" -WindowStyle Hidden -PassThru
+Write-Host "Timeout set to $Timeout seconds (watchdog PID: $($watchdogProc.Id))." -ForegroundColor Gray
 
 # --- 校验输入文件 ---
 if (-not (Test-Path $PsdPath)) {
@@ -51,12 +59,62 @@ $jsxPsdPath = $PsdPath.Replace('\', '/')
 # --- 连接 Photoshop ---
 Write-Host "Connecting to Photoshop..." -ForegroundColor Cyan
 
-try {
-    $ps = New-Object -ComObject Photoshop.Application
-} catch {
-    Write-Error "Cannot connect to Photoshop. Make sure it is installed and has been launched at least once."
-    exit 1
+# 如果 Photoshop 未运行，先启动它
+$psProcess = Get-Process -Name "Photoshop" -ErrorAction SilentlyContinue
+if (-not $psProcess) {
+    Write-Host "Photoshop is not running, starting it..." -ForegroundColor Yellow
+    Start-Process "Photoshop"
+    Start-Sleep -Seconds 10
+    # 等待 Photoshop 进程出现
+    $waitStart = Get-Date
+    while (-not (Get-Process -Name "Photoshop" -ErrorAction SilentlyContinue)) {
+        if (((Get-Date) - $waitStart).TotalSeconds -ge 60) {
+            Write-Error "Photoshop process did not start within 60 seconds."
+            exit 1
+        }
+        Start-Sleep -Seconds 3
+    }
+    # 额外等待 PS 完全初始化
+    Write-Host "Waiting for Photoshop to initialize..." -ForegroundColor Gray
+    Start-Sleep -Seconds 15
 }
+
+# 建立 COM 连接（重试机制）
+$comRetry = 0
+$comMaxRetry = 10
+$ps = $null
+while ($comRetry -lt $comMaxRetry) {
+    try {
+        $ps = New-Object -ComObject Photoshop.Application
+        break
+    } catch {
+        $comRetry++
+        if ($comRetry -ge $comMaxRetry) {
+            Write-Error "Cannot connect to Photoshop after $comMaxRetry attempts. Make sure it is installed and has been launched at least once."
+            exit 1
+        }
+        Write-Host "  COM connection attempt $comRetry failed, retrying in 5s..." -ForegroundColor Gray
+        Start-Sleep -Seconds 5
+    }
+}
+
+# 等待 Photoshop 响应
+$waitStart = Get-Date
+$maxWaitSec = 120
+while ($true) {
+    try {
+        $null = $ps.Version
+        break
+    } catch {
+        $elapsed = ((Get-Date) - $waitStart).TotalSeconds
+        if ($elapsed -ge $maxWaitSec) {
+            Write-Error "Photoshop did not become ready within $maxWaitSec seconds."
+            exit 1
+        }
+        Start-Sleep -Seconds 3
+    }
+}
+Write-Host "Photoshop is ready (version $($ps.Version))." -ForegroundColor Gray
 
 # --- 打开文件（保留图层，不弹对话框）---
 $openScript = 'var file = new File("' + $jsxPsdPath + '");'
@@ -119,10 +177,12 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($jsonPath, $result, $utf8NoBom)
 
 # --- 显示结果 ---
+Stop-Process -Id $watchdogProc.Id -Force -ErrorAction SilentlyContinue
 $fileSize = (Get-Item $jsonPath).Length
 $fileSizeKB = [math]::Round($fileSize / 1024, 1)
 Write-Host ""
 Write-Host "Done! JSON saved to: $jsonPath ($fileSizeKB KB)" -ForegroundColor Green
 Write-Host ""
+$psExportPath = Join-Path $PSScriptRoot "..\ps-export\ps-export.ps1"
 Write-Host "Tip: Use the 'path' field in JSON as layer path for ps-export.ps1:" -ForegroundColor Cyan
-Write-Host "  powershell -ExecutionPolicy Bypass -File `"G:\ps-export.ps1`" `"$PsdPath`" -Export `"path/to/layer`"" -ForegroundColor Cyan
+Write-Host "  powershell -ExecutionPolicy Bypass -File `"$psExportPath`" `"$PsdPath`" -Export `"path/to/layer`"" -ForegroundColor Cyan
