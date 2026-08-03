@@ -45,8 +45,8 @@ try:
     from playwright.sync_api import sync_playwright
 except ImportError:
     print("❌ playwright 未安装，请先执行:")
-    print("   ~/.kiro/skills/design-to-code/psd-layer-exporter/.venv/bin/pip3 install playwright")
-    print("   ~/.kiro/skills/design-to-code/psd-layer-exporter/.venv/bin/python3 -m playwright install chromium")
+    print("   ~/.kiro/skills/design-to-code/.venv/Scripts/pip install playwright")
+    print("   ~/.kiro/skills/design-to-code/.venv/Scripts/python -m playwright install chromium")
     sys.exit(1)
 
 
