@@ -30,6 +30,11 @@
 // ============================================================
 
 (function () {
+    var savedDialogMode = app.displayDialogs;
+    app.displayDialogs = DialogModes.NO;
+    var __layerOutput = "";
+    try {
+        __layerOutput = (function () {
     if (app.documents.length === 0) {
         return '{"error": "No document is open."}';
     }
@@ -201,4 +206,10 @@
     json += '}';
 
     return json;
+        })();
+    } catch (e) {
+        __layerOutput = '{"error": ' + '"' + String(e.message || e).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"' + '}';
+    }
+    try { app.displayDialogs = savedDialogMode; } catch (ignoreDialog) {}
+    return __layerOutput;
 })();

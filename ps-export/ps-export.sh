@@ -149,6 +149,86 @@ EOF
     return 1
 }
 
+# Photoshop 的「命令不可用」之类报错会弹出模态框，do javascript 会一直停在那里。
+# 执行期间只点报错框上的「确定 / OK」，点完后脚本收到异常并继续。
+start_error_dialog_dismisser() {
+    local proc_prefix="$1"
+    DISMISS_FLAG=$(mktemp "${TMPDIR:-/tmp}/ps-dismiss.XXXXXX")
+    osascript - "$proc_prefix" "$DISMISS_FLAG" >/dev/null 2>&1 <<'EOF' &
+on run argv
+    set procPrefix to item 1 of argv
+    set flagPath to item 2 of argv
+    repeat
+        try
+            do shell script "test -f " & quoted form of flagPath
+        on error
+            exit repeat
+        end try
+        try
+            tell application "System Events"
+                set psProcs to every process whose name starts with procPrefix
+                repeat with psProc in psProcs
+                    tell psProc
+                        repeat with w in windows
+                            set wname to ""
+                            try
+                                set wname to name of w as text
+                            end try
+                            if wname contains ".psb" or wname contains ".psd" or wname contains ".PSB" or wname contains ".PSD" then
+                                try
+                                    repeat with s in sheets of w
+                                        my click_ok(s)
+                                    end repeat
+                                end try
+                            else
+                                my click_ok(w)
+                                try
+                                    repeat with s in sheets of w
+                                        my click_ok(s)
+                                    end repeat
+                                end try
+                            end if
+                        end repeat
+                    end tell
+                end repeat
+            end tell
+        end try
+        delay 0.25
+    end repeat
+end run
+
+on click_ok(uiElem)
+    tell application "System Events"
+        tell uiElem
+            set labels to {"确定", "OK", "好"}
+            repeat with labelName in labels
+                try
+                    if exists button labelName then
+                        click button labelName
+                        return true
+                    end if
+                end try
+            end repeat
+        end tell
+    end tell
+    return false
+end click_ok
+EOF
+    DISMISS_PID=$!
+}
+
+stop_error_dialog_dismisser() {
+    if [[ -n "${DISMISS_FLAG:-}" ]]; then
+        rm -f "$DISMISS_FLAG"
+        DISMISS_FLAG=""
+    fi
+    if [[ -n "${DISMISS_PID:-}" ]]; then
+        kill "$DISMISS_PID" 2>/dev/null || true
+        wait "$DISMISS_PID" 2>/dev/null || true
+        DISMISS_PID=""
+    fi
+}
+
 run_photoshop_jsx() {
     local mode="$1" target="$2" jsx="$3"
     local err_file out_file rc
@@ -269,6 +349,7 @@ args_file=$(mktemp "${TMPDIR:-/tmp}/ps-export-args.XXXXXX")
 result_file=$(mktemp "${TMPDIR:-/tmp}/ps-export-result.XXXXXX")
 runner_file=$(mktemp "${TMPDIR:-/tmp}/ps-export-runner.XXXXXX.jsx")
 cleanup() {
+    stop_error_dialog_dismisser
     rm -f "$args_file" "$result_file" "$runner_file"
 }
 trap cleanup EXIT
@@ -278,16 +359,24 @@ printf '%s' "$args_json" > "$args_file"
 {
     printf 'var file = new File("%s");\n' "$(js_escape "$PSD_PATH")"
     cat <<'EOF'
+var __prevDialogs = app.displayDialogs;
+app.displayDialogs = DialogModes.NO;
 try {
-    var opts = new PhotoshopOpenOptions();
-    opts.preserveLayers = true;
-    app.open(file, opts);
-} catch (e) {
-    var desc = new ActionDescriptor();
-    desc.putPath(charIDToTypeID("null"), file);
-    desc.putBoolean(stringIDToTypeID("preserveLayers"), true);
-    app.executeAction(charIDToTypeID("Opn "), desc, DialogModes.NO);
+    try {
+        var opts = new PhotoshopOpenOptions();
+        opts.preserveLayers = true;
+        app.open(file, opts);
+    } catch (e) {
+        var desc = new ActionDescriptor();
+        desc.putPath(charIDToTypeID("null"), file);
+        desc.putBoolean(stringIDToTypeID("preserveLayers"), true);
+        app.executeAction(charIDToTypeID("Opn "), desc, DialogModes.NO);
+    }
+} catch (eOpen) {
+    app.displayDialogs = __prevDialogs;
+    throw eOpen;
 }
+app.displayDialogs = __prevDialogs;
 EOF
     printf 'var argsFile = new File("%s");\n' "$(js_escape "$args_file")"
     cat <<'EOF'
@@ -330,10 +419,16 @@ fi
 echo "Opening (preserve layers): $PSD_PATH"
 echo "Exporting PNG..."
 
+dismiss_prefix="Adobe Photoshop"
+if [[ "$PS_MODE" == "name" ]]; then
+    dismiss_prefix="$PS_TARGET"
+fi
+start_error_dialog_dismisser "$dismiss_prefix"
 set +e
 run_photoshop_jsx "$PS_MODE" "$PS_TARGET" "$runner_file"
 ps_rc=$?
 set -e
+stop_error_dialog_dismisser
 
 if [[ $ps_rc -ne 0 ]]; then
     echo "Photoshop script execution failed: ${PHOTOSHOP_STDERR:-unknown error}" >&2

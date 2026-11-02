@@ -53,6 +53,12 @@
 // ============================================================
 
 (function () {
+    // 整个导出过程禁止弹窗。命令不可用时应抛错返回，不能停在对话框上等点击。
+    var savedDialogMode = app.displayDialogs;
+    app.displayDialogs = DialogModes.NO;
+    var __exportOutput = "";
+    try {
+        __exportOutput = (function () {
     // 没有打开的文档则退出
     if (app.documents.length === 0) {
         return "ERROR: No document is open in Photoshop.";
@@ -159,11 +165,12 @@
         // 记录 flatten 前的历史状态
         var stateBeforeFlatten = doc.activeHistoryState;
 
-        doc.flatten();
-
-        // 禁止弹出对话框
-        var savedDialogMode = app.displayDialogs;
-        app.displayDialogs = DialogModes.NO;
+        try {
+            doc.flatten();
+        } catch (flattenErr) {
+            try { doc.activeHistoryState = stateBeforeFlatten; } catch (ignoreFlatten) {}
+            return "ERROR: Flatten failed: " + (flattenErr.message || flattenErr);
+        }
 
         var pngOptions = new PNGSaveOptions();
         pngOptions.compression = 6;
@@ -171,9 +178,6 @@
 
         var saveFile = new File(exportPath);
         doc.saveAs(saveFile, pngOptions, true, Extension.LOWERCASE);
-
-        // 恢复对话框设置
-        app.displayDialogs = savedDialogMode;
 
         // 恢复 flatten 前的状态（恢复图层结构）
         doc.activeHistoryState = stateBeforeFlatten;
@@ -206,9 +210,11 @@
             // 文件名：路径中 "/" 替换为 "_"
             var layerName = exportList[i].replace(/\//g, "_");
             var exportPath = folder + layerName + ".png";
+            var tempDoc = null;
 
+            try {
             // 创建临时文档（与原文档同尺寸，透明背景）
-            var tempDoc = app.documents.add(
+            tempDoc = app.documents.add(
                 doc.width, doc.height, doc.resolution,
                 layerName, NewDocumentMode.RGB, DocumentFill.TRANSPARENT
             );
@@ -223,8 +229,16 @@
                 tempDoc.layers[tempDoc.layers.length - 1].remove();
             }
 
-            // 合并所有图层但保持透明度（mergeVisibleLayers 不会填充白色背景）
-            tempDoc.mergeVisibleLayers();
+            // 多个顶层图层才合并，合并时保留透明（不要用 flatten，会填白底）。
+            // 只剩一个图层组时，合并该组；只剩一个普通图层时不需要合并。
+            try {
+                if (tempDoc.layers.length > 1) {
+                    tempDoc.mergeVisibleLayers();
+                } else if (tempDoc.layers.length === 1 && tempDoc.layers[0].typename === "LayerSet") {
+                    tempDoc.activeLayer = tempDoc.layers[0];
+                    tempDoc.layers[0].merge();
+                }
+            } catch (mergeErr) {}
 
             // 裁剪掉所有透明区域（按透明像素裁切）
             tempDoc.trim(TrimType.TRANSPARENT, true, true, true, true);
@@ -237,11 +251,7 @@
                 continue;
             }
 
-            // 禁止弹出对话框（覆盖已有文件时不弹确认）
-            var savedDialogMode = app.displayDialogs;
-            app.displayDialogs = DialogModes.NO;
-
-            // 保存为 PNG
+            // 保存为 PNG（对话框已关闭，覆盖已有文件时不确认）
             var pngOptions = new PNGSaveOptions();
             pngOptions.compression = 6;
             pngOptions.interlaced = false;
@@ -249,14 +259,18 @@
             var saveFile = new File(exportPath);
             tempDoc.saveAs(saveFile, pngOptions, true, Extension.LOWERCASE);
 
-            // 恢复对话框设置
-            app.displayDialogs = savedDialogMode;
-
             // 关闭临时文档（不保存）
             tempDoc.close(SaveOptions.DONOTSAVECHANGES);
 
             app.activeDocument = doc;
             results.push(exportPath);
+            } catch (layerErr) {
+                try {
+                    if (tempDoc) tempDoc.close(SaveOptions.DONOTSAVECHANGES);
+                } catch (ignoreClose) {}
+                try { app.activeDocument = doc; } catch (ignoreDoc) {}
+                warnings.push("WARNING: Export failed: " + exportList[i] + " (" + (layerErr.message || layerErr) + ")");
+            }
         }
     }
 
@@ -271,4 +285,10 @@
         output += "\n" + warnings.join("\n");
     }
     return output;
+        })();
+    } catch (e) {
+        __exportOutput = "ERROR: " + (e.message || e);
+    }
+    try { app.displayDialogs = savedDialogMode; } catch (ignoreDialog) {}
+    return __exportOutput;
 })();
