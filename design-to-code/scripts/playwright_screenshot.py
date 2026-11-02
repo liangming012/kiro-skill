@@ -44,9 +44,19 @@ import os
 try:
     from playwright.sync_api import sync_playwright
 except ImportError:
+    import platform
+    if platform.system() == "Darwin":
+        py = "~/.kiro/skills/design-to-code/.venv-macos/bin/python3"
+        pip = "~/.kiro/skills/design-to-code/.venv-macos/bin/pip3"
+    elif platform.system() == "Windows":
+        py = "~/.kiro/skills/design-to-code/.venv/Scripts/python.exe"
+        pip = "~/.kiro/skills/design-to-code/.venv/Scripts/pip.exe"
+    else:
+        py = "~/.kiro/skills/design-to-code/.venv/bin/python3"
+        pip = "~/.kiro/skills/design-to-code/.venv/bin/pip3"
     print("❌ playwright 未安装，请先执行:")
-    print("   ~/.kiro/skills/design-to-code/psd-layer-exporter/.venv/bin/pip3 install playwright")
-    print("   ~/.kiro/skills/design-to-code/psd-layer-exporter/.venv/bin/python3 -m playwright install chromium")
+    print(f"   {pip} install playwright")
+    print(f"   {py} -m playwright install chromium")
     sys.exit(1)
 
 

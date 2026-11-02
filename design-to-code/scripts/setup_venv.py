@@ -3,8 +3,11 @@
 虚拟环境初始化脚本
 用法: python setup_venv.py
 
-在 skill 目录下创建 .venv 虚拟环境并安装依赖。
+在 skill 目录下创建虚拟环境并安装依赖。
 支持 Windows 和 macOS/Linux。
+
+Windows 与 Linux 使用 .venv。
+macOS 使用 .venv-macos，避免覆盖仓库里已有的 Windows 虚拟环境。
 """
 import subprocess
 import sys
@@ -12,7 +15,10 @@ import os
 import platform
 
 SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VENV_DIR = os.path.join(SKILL_DIR, ".venv")
+if platform.system() == "Darwin":
+    VENV_DIR = os.path.join(SKILL_DIR, ".venv-macos")
+else:
+    VENV_DIR = os.path.join(SKILL_DIR, ".venv")
 REQUIREMENTS = ["psd-tools", "Pillow", "playwright"]
 
 IS_WINDOWS = platform.system() == "Windows"

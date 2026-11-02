@@ -24,20 +24,33 @@ triggers:
 
 ## 功能说明
 
-该 skill 包含两个脚本协同工作：
+该 skill 包含三个脚本协同工作：
 
-1. **list-layers.ps1** — PowerShell 入口脚本，负责连接 Photoshop、打开文件、调用 JSX 脚本、输出 JSON 文件
-2. **list-layers.jsx** — Photoshop JSX 脚本，负责遍历所有图层并生成 JSON 数据
+1. **list-layers.ps1** — Windows PowerShell 入口脚本，负责连接 Photoshop、打开文件、调用 JSX 脚本、输出 JSON 文件
+2. **list-layers.sh** — macOS 入口脚本，通过 AppleScript 完成与 ps1 相同的事情
+3. **list-layers.jsx** — Photoshop JSX 脚本，负责遍历所有图层并生成 JSON 数据。Windows 和 macOS 共用
 
 ## 前置条件
+
+### Windows
 
 - Windows 系统
 - Adobe Photoshop 已安装并至少启动过一次（需要 COM 接口）
 - PowerShell 执行策略允许运行脚本
 
+### macOS
+
+- macOS
+- Adobe Photoshop 已安装。脚本会优先连接已经在运行的版本；没运行时按 `com.adobe.Photoshop` 启动
+- 首次调用需要在「系统设置 → 隐私与安全性 → 自动化」中允许终端控制 Photoshop
+- 使用 `list-layers.sh`，不要在 macOS 上执行 `list-layers.ps1`
+
 ## 使用方式
 
+### Windows
+
 ```powershell
+# Windows
 powershell -ExecutionPolicy Bypass -File "<skill_dir>\list-layers.ps1" "<PSD/PSB文件路径>"
 ```
 
@@ -46,16 +59,36 @@ powershell -ExecutionPolicy Bypass -File "<skill_dir>\list-layers.ps1" "<PSD/PSB
 C:\Users\yanliangming.OASOFFICE\.kiro\skills\list-layers
 ```
 
+### macOS
+
+```bash
+# macOS
+bash "<skill_dir>/list-layers.sh" "<PSD/PSB文件路径>"
+```
+
+其中 `<skill_dir>` 为本 skill 所在目录：
+```
+~/.kiro/skills/list-layers
+```
+
 ### 示例
 
 ```powershell
+# Windows
 powershell -ExecutionPolicy Bypass -File "C:\Users\yanliangming.OASOFFICE\.kiro\skills\list-layers\list-layers.ps1" "G:\1.psb"
+```
+
+```bash
+# macOS
+bash ~/.kiro/skills/list-layers/list-layers.sh "/path/to/1.psb"
 ```
 
 ## 输出
 
 - 输出文件位于源文件同目录，文件名格式为 `<源文件名>_layers.json`
-- 例如输入 `G:\1.psb`，输出 `G:\1_layers.json`
+- Windows 示例：输入 `G:\1.psb`，输出 `G:\1_layers.json`
+- macOS 示例：输入 `/path/to/1.psb`，输出 `/path/to/1_layers.json`
+- 两个系统都写出 UTF-8 无 BOM 的 JSON
 
 ## JSON 结构
 
@@ -102,7 +135,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Users\yanliangming.OASOFFICE\.kiro\
 
 | 字段 | 说明 |
 |------|------|
-| `path` | 图层完整路径，可直接用于 ps-export.ps1 的 -Hide / -Show / -Export 参数 |
+| `path` | 图层完整路径，可直接用于 ps-export.ps1（Windows）或 ps-export.sh（macOS）的 -Hide / -Show / -Export 参数 |
 | `name` | 图层名称 |
 | `type` | 图层类型（Group / NORMAL / TEXT 等） |
 | `visible` | 图层是否可见 |
@@ -125,7 +158,8 @@ powershell -ExecutionPolicy Bypass -File "C:\Users\yanliangming.OASOFFICE\.kiro\
 
 ## 注意事项
 
-- 脚本会通过 COM 自动连接 Photoshop，如果 Photoshop 未运行会自动启动
+- Windows 上脚本会通过 COM 自动连接 Photoshop，如果 Photoshop 未运行会自动启动
+- macOS 上脚本会通过 AppleScript 自动连接 Photoshop，如果 Photoshop 未运行会自动启动。装了多个版本时，优先使用已经打开的那一个
 - 打开文件时会保留所有图层，不会弹出对话框
 - 支持 .psd 和 .psb 格式
 - 输出文件使用 UTF-8 无 BOM 编码
