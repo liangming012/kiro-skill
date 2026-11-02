@@ -3,9 +3,9 @@
 // Photoshop JSX 脚本：导出图层或完整页面为 PNG
 // ============================================================
 //
-// 使用示例（通过 ps-export.ps1 调用）：
+// 使用示例：
 //
-//   # 导出完整页面：
+// Windows（ps-export.ps1）：
 //   powershell -ExecutionPolicy Bypass -File "G:\ps-export.ps1" "G:\1.psb"
 //
 //   # 隐藏图层后导出完整页面：
@@ -20,7 +20,11 @@
 //   # 组合使用：隐藏图层 + 导出指定图层：
 //   powershell -ExecutionPolicy Bypass -File "G:\ps-export.ps1" "G:\1.psb" -Hide "Header/watermark" -Export "Header/banner"
 //
-// 参数说明（由 PowerShell 传入的 JSON 字符串）：
+// macOS（ps-export.sh，参数名与上面相同）：
+//   bash ps-export.sh "/path/to/1.psb"
+//   bash ps-export.sh "/path/to/1.psb" -Hide "Header/watermark" -Export "Header/banner"
+//
+// 参数说明（由入口脚本传入的 JSON 字符串）：
 //   {
 //     "hide": ["图层路径", ...],      // 导出前隐藏的图层
 //     "show": ["图层路径", ...],      // 导出前显示的图层
@@ -49,6 +53,12 @@
 // ============================================================
 
 (function () {
+    // 整个导出过程禁止弹窗。命令不可用时应抛错返回，不能停在对话框上等点击。
+    var savedDialogMode = app.displayDialogs;
+    app.displayDialogs = DialogModes.NO;
+    var __exportOutput = "";
+    try {
+        __exportOutput = (function () {
     // 没有打开的文档则退出
     if (app.documents.length === 0) {
         return "ERROR: No document is open in Photoshop.";
@@ -172,7 +182,7 @@
 
             results.push(exportPath);
         } catch (flattenErr) {
-            warnings.push("WARNING: Full page export failed: " + flattenErr.message);
+            warnings.push("WARNING: Full page export failed: " + (flattenErr.message || flattenErr));
         }
 
         // 恢复 flatten 前的状态（恢复图层结构）
@@ -210,7 +220,6 @@
             // 文件名：路径中 "/" 替换为 "_"
             var layerName = exportList[i].replace(/\//g, "_");
             var exportPath = folder + layerName + ".png";
-
             var tempDoc = null;
             try {
                 // 创建临时文档（与原文档同尺寸，透明背景）
@@ -233,7 +242,8 @@
                     }
                 }
 
-                // 合并所有图层但保持透明度
+                // 多个顶层图层才合并，合并时保留透明。
+                // 只剩一个图层组时合并该组；只剩一个普通图层时不合并，避免「合并可见图层」弹窗。
                 if (tempDoc.layers.length > 1) {
                     try {
                         tempDoc.mergeVisibleLayers();
@@ -242,6 +252,13 @@
                         app.activeDocument = doc;
                         warnings.push("WARNING: mergeVisibleLayers failed for layer: " + exportList[i] + " (" + mergeErr.message + ")");
                         continue;
+                    }
+                } else if (tempDoc.layers.length === 1 && tempDoc.layers[0].typename === "LayerSet") {
+                    try {
+                        tempDoc.activeLayer = tempDoc.layers[0];
+                        tempDoc.layers[0].merge();
+                    } catch (mergeGroupErr) {
+                        // 图层组合并失败时仍按当前可见内容继续导出
                     }
                 }
 
@@ -306,4 +323,10 @@
         output += "\n" + warnings.join("\n");
     }
     return output;
+        })();
+    } catch (e) {
+        __exportOutput = "ERROR: " + (e.message || e);
+    }
+    try { app.displayDialogs = savedDialogMode; } catch (ignoreDialog) {}
+    return __exportOutput;
 })();

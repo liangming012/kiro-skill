@@ -1,4 +1,5 @@
 # list-layers.ps1
+# 仅用于 Windows。macOS 请使用同目录的 list-layers.sh，不要执行本文件。
 # ============================================================
 # PowerShell 脚本：读取 PSD/PSB 图层信息，输出为 JSON 文件
 # ============================================================
@@ -117,11 +118,14 @@ while ($true) {
 Write-Host "Photoshop is ready (version $($ps.Version))." -ForegroundColor Gray
 
 # --- 打开文件（保留图层，不弹对话框）---
-$openScript = 'var file = new File("' + $jsxPsdPath + '");'
-$openScript += ' try { var opts = new PhotoshopOpenOptions(); opts.preserveLayers = true; app.open(file, opts); }'
+$openScript = 'var __prevDialogs = app.displayDialogs; app.displayDialogs = DialogModes.NO;'
+$openScript += ' var file = new File("' + $jsxPsdPath + '");'
+$openScript += ' try { try { var opts = new PhotoshopOpenOptions(); opts.preserveLayers = true; app.open(file, opts); }'
 $openScript += ' catch (e) { var desc = new ActionDescriptor(); desc.putPath(charIDToTypeID("null"), file);'
 $openScript += ' desc.putBoolean(stringIDToTypeID("preserveLayers"), true);'
-$openScript += ' app.executeAction(charIDToTypeID("Opn "), desc, DialogModes.NO); }'
+$openScript += ' app.executeAction(charIDToTypeID("Opn "), desc, DialogModes.NO); } }'
+$openScript += ' catch (eOpen) { app.displayDialogs = __prevDialogs; throw eOpen; }'
+$openScript += ' app.displayDialogs = __prevDialogs;'
 
 Write-Host "Opening (preserve layers): $PsdPath" -ForegroundColor Cyan
 

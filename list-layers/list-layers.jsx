@@ -24,11 +24,17 @@
 //   ]
 // }
 //
-// path 字段可直接复制给 ps-export.ps1 的 -Hide / -Show / -Export 参数使用
+// path 字段可直接复制给 ps-export 的 -Hide / -Show / -Export 参数使用
+// Windows 入口：ps-export.ps1    macOS 入口：ps-export.sh
 //
 // ============================================================
 
 (function () {
+    var savedDialogMode = app.displayDialogs;
+    app.displayDialogs = DialogModes.NO;
+    var __layerOutput = "";
+    try {
+        __layerOutput = (function () {
     if (app.documents.length === 0) {
         return '{"error": "No document is open."}';
     }
@@ -200,4 +206,10 @@
     json += '}';
 
     return json;
+        })();
+    } catch (e) {
+        __layerOutput = '{"error": ' + '"' + String(e.message || e).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"' + '}';
+    }
+    try { app.displayDialogs = savedDialogMode; } catch (ignoreDialog) {}
+    return __layerOutput;
 })();

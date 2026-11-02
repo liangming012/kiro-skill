@@ -385,9 +385,10 @@ export default {
 2. 检查项目根目录是否存在 `playwright.config.ts` 或 `playwright.config.js`
 3. 检查是否存在 `e2e/` 目录
 
-如果项目未安装 Playwright，执行以下步骤：
+如果项目未安装 Playwright，执行以下步骤。下面的 npm 命令在 Windows 和 macOS 上相同：
 
 ```bash
+# Windows / macOS 通用
 # 安装 Playwright
 npm install -D @playwright/test
 
@@ -555,7 +556,10 @@ await expect(locator).toHaveClass(/active/);
 
 #### 2. 运行测试
 
+下面的命令在 Windows 和 macOS 上相同：
+
 ```bash
+# Windows / macOS 通用
 # 运行某个测试文件
 npx playwright test e2e/目标文件.spec.ts
 
@@ -611,16 +615,22 @@ export async function login(page: Page, username = "admin", password = "123456")
 4. 如果功能变更导致测试需要更新，同步更新测试脚本
 5. 确保所有相关测试通过
 
-```bash
-# 查找相关测试文件
+查找相关测试文件时，只执行当前操作系统对应的代码块：
 
+```bash
 # macOS / Linux
 find e2e -name "*.spec.ts" | xargs grep -l "相关关键词"
+```
 
-# Windows PowerShell
+```powershell
+# Windows
 Get-ChildItem -Path e2e -Recurse -Filter "*.spec.ts" | Select-String -Pattern "相关关键词" -List | Select-Object -ExpandProperty Path
+```
 
-# 运行相关测试
+运行测试的命令 Windows 和 macOS 相同：
+
+```bash
+# Windows / macOS 通用
 npx playwright test e2e/相关模块.spec.ts
 ```
 
