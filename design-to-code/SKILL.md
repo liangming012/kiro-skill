@@ -30,6 +30,36 @@ description: 前端项目中根据设计稿（PSD/PSB）分析、导出、替换
 7. **失败重试有上限**：同一图片最大重试 5 次，超过则标记失败
 8. **多任务并行**：当有多个独立任务可以同时进行时（如多张图片导出、多个语种图片处理、多个文件写入），启动多个子任务并行操作，提高执行效率
 
+## 运行平台
+
+本 skill 同时支持 Windows 和 macOS。执行终端命令前先判断系统，只运行对应平台的代码块：
+
+- **Windows**：执行 `powershell` 代码块。图层读取用 `list-layers.ps1`，导出用 `ps-export.ps1`，Python 使用 `~/.kiro/skills/design-to-code/.venv/Scripts/python.exe`
+- **macOS**：执行 `bash` 代码块。图层读取用 `list-layers.sh`，导出用 `ps-export.sh`，Python 使用 `~/.kiro/skills/design-to-code/.venv-macos/bin/python3`
+
+macOS 首次做图像处理或 Playwright Python 截图前，先创建独立虚拟环境：
+
+```bash
+# 仅 macOS
+python3 ~/.kiro/skills/design-to-code/scripts/setup_venv.py
+```
+
+该命令只创建 `.venv-macos`，不会修改 Windows 使用的 `.venv`。
+
+`-Hide`、`-Show`、`-Export` 在两个系统上含义相同。下文每个 PowerShell 示例后面都附有等价的 bash 示例。
+
+读取图层：
+
+```powershell
+# Windows
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.kiro\skills\list-layers\list-layers.ps1" "/path/to/design.psd"
+```
+
+```bash
+# macOS
+bash ~/.kiro/skills/list-layers/list-layers.sh "/path/to/design.psd"
+```
+
 ## 工作流程
 
 ⚠️ **【强制执行规则】**：以下所有步骤必须严格按顺序逐步执行，不得跳过任何步骤（除非该步骤有明确的「条件跳过」规则且条件成立）。每完成一步必须在心理标记为已完成，并立即进入下一步。
@@ -146,8 +176,13 @@ todo_list create:
    1. **用户明确指定**：如果用户提供了 PSD/PSB 文件路径，直接使用
    2. **自动查找项目 design 目录**：如果用户未指定路径，优先在项目根目录下查找 `design/` 目录：
       ```powershell
+   # Windows
    # 查找项目根目录下的 design 目录中的 PSD/PSB 文件
    Get-ChildItem -Path ./design -Recurse -Depth 2 -Include *.psd,*.psb 2>$null
+   ```
+      ```bash
+   # macOS
+   find ./design -maxdepth 3 \( -name '*.psd' -o -name '*.psb' \)
    ```
       - 如果找到 PSD/PSB 文件，列出文件列表供确认（如果只有一个则直接使用）
       - 如果 `design/` 目录存在但没有 PSD/PSB 文件，告知用户目录为空
@@ -523,6 +558,7 @@ todo_list create:
 4. **统一尺寸处理**：使用预置脚本 `img_unify_size.py` 的 `unify` 命令，自动为所有语种图片创建统一尺寸的透明画布并居中放置：
 
    ```powershell
+   # Windows
    # unify 命令：自动取最大宽高，各图片裁剪透明区域后居中放置到统一画布
    ~/.kiro/skills/design-to-code/.venv/Scripts/python.exe `
      ~/.kiro/skills/design-to-code/scripts/img_unify_size.py `
@@ -531,6 +567,17 @@ todo_list create:
    # 也可以指定目标尺寸（如需要与已有图片尺寸对齐）
    ~/.kiro/skills/design-to-code/.venv/Scripts/python.exe `
      ~/.kiro/skills/design-to-code/scripts/img_unify_size.py `
+     unify <图片1.png> <图片2.png> --target-width 380 --target-height 85
+   ```
+
+   ```bash
+   # macOS
+   ~/.kiro/skills/design-to-code/.venv-macos/bin/python3 \
+     ~/.kiro/skills/design-to-code/scripts/img_unify_size.py \
+     unify <图片1.png> <图片2.png> <图片3.png> ...
+
+   ~/.kiro/skills/design-to-code/.venv-macos/bin/python3 \
+     ~/.kiro/skills/design-to-code/scripts/img_unify_size.py \
      unify <图片1.png> <图片2.png> --target-width 380 --target-height 85
    ```
 
@@ -552,6 +599,7 @@ todo_list create:
 
    **情况 B：新导出图片尺寸偏大（宽或高超出已有尺寸）** → 优先通过裁剪透明区域解决：
    ```powershell
+   # Windows
    # trim 命令：裁剪透明区域，并适配到目标尺寸（居中放置）
    & "$env:USERPROFILE\.kiro\skills\design-to-code\.venv\Scripts\python.exe" `
      "$env:USERPROFILE\.kiro\skills\design-to-code\scripts\img_unify_size.py" `
@@ -560,11 +608,26 @@ todo_list create:
    # 如果裁剪后仍超出目标尺寸，脚本会输出警告，此时进入情况 D 处理
    ```
 
+   ```bash
+   # macOS
+   ~/.kiro/skills/design-to-code/.venv-macos/bin/python3 \
+     ~/.kiro/skills/design-to-code/scripts/img_unify_size.py \
+     trim <新语种图片路径> --target-width <目标宽度> --target-height <目标高度>
+   ```
+
    **情况 C：新导出图片尺寸偏小（宽或高小于已有尺寸）** → 创建与已有相同尺寸的透明画布，将新图片居中放置：
    ```powershell
+   # Windows
    # expand 命令：扩展画布到目标尺寸，原图居中放置
    & "$env:USERPROFILE\.kiro\skills\design-to-code\.venv\Scripts\python.exe" `
      "$env:USERPROFILE\.kiro\skills\design-to-code\scripts\img_unify_size.py" `
+     expand <新语种图片路径> --target-width <目标宽度> --target-height <目标高度>
+   ```
+
+   ```bash
+   # macOS
+   ~/.kiro/skills/design-to-code/.venv-macos/bin/python3 \
+     ~/.kiro/skills/design-to-code/scripts/img_unify_size.py \
      expand <新语种图片路径> --target-width <目标宽度> --target-height <目标高度>
    ```
 
@@ -710,7 +773,7 @@ todo_list create:
 - 图层组内所有子图层都是纯视觉元素，代码中没有任何独立实现的对应内容
 - 图片是纯装饰/图标类（如 logo、icon、分割线等），不包含任何动态/文字内容
 - 整个图层组作为一个完整的不可分割视觉元素导出（如复杂合成的艺术图形）
-- **智能对象（smartobject）类型的图层** — Photoshop 无法通过 COM 接口读取智能对象内部嵌套的 PSD/PSB 结构，视为不可拆分的单一图层，直接导出其栅格化外观，不做内部去重分析
+- **智能对象（smartobject）类型的图层** — Photoshop 无法通过 COM 接口读取智能对象内部嵌套的 PSD/PSB 结构，视为不可拆分的单一图层，直接导出其栅格化外观，不做内部去重分析。macOS 通过 AppleScript 调用同一 JSX，这个限制同样存在
 
 #### 背景图图层去重分析（关键）
 
@@ -1073,11 +1136,19 @@ todo_list create:
 
    对应的 `ps-export` 调用：
    ```powershell
+   # Windows
    # 隐藏代码中已独立实现的元素 + 隐藏不属于该背景图范围的其他顶层图层组
    powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.kiro\skills\ps-export\ps-export.ps1" `
      "/path/to/design.psd" `
      -Hide "Header Section/title-text","Header Section/countdown-box","Header Section/start-button","Header Section/avatar-frame","Content Section","Footer Section","Popup Layer"
    # 输出 export.png 在 PSD 同级目录（合并导出完整页面，隐藏的图层不参与合成）
+   ```
+
+   ```bash
+   # macOS
+   bash ~/.kiro/skills/ps-export/ps-export.sh \
+     "/path/to/design.psd" \
+     -Hide "Header Section/title-text","Header Section/countdown-box","Header Section/start-button","Header Section/avatar-frame","Content Section","Footer Section","Popup Layer"
    ```
    
    注意：`Header Section/gradient-bg`、`Header Section/decorative-stars` 等装饰性图层**不需要在配置中列出**，它们保持设计稿原始可见性（默认 visible: true）自然会被渲染。
@@ -1122,6 +1193,7 @@ todo_list create:
 4. **效果依赖注意**：某些效果（如投影）会超出图层本身的 bbox 范围，裁剪时需要适当扩大裁剪区域（上下左右各扩大 20-50px），避免截断效果
 
 ```powershell
+# Windows / macOS 通用：用文件写入工具创建文件，不要在终端执行本段
 # 示例：composite 导出后裁剪到目标图层区域（含效果溢出边距）
 # 使用文件写入工具创建临时 .py 文件 _temp_crop_layer.py，内容如下：
 ```
@@ -1156,12 +1228,20 @@ print(f"✅ 裁剪完成: {cropped.size[0]}×{cropped.size[1]}")
 ```
 
 ```powershell
+# Windows
 # 执行临时脚本
 ~/.kiro/skills/design-to-code/.venv/Scripts/python.exe _temp_crop_layer.py `
   <composite图片> <输出路径> <left> <top> <right> <bottom>
 
 # 删除临时文件
 Remove-Item -Force _temp_crop_layer.py -ErrorAction SilentlyContinue
+```
+
+```bash
+# macOS
+~/.kiro/skills/design-to-code/.venv-macos/bin/python3 _temp_crop_layer.py \
+  <composite图片> <输出路径> <left> <top> <right> <bottom>
+rm -f _temp_crop_layer.py
 ```
 
 **禁止从全页面合成图中裁切独立元素图片（严格执行）**：
@@ -1230,9 +1310,17 @@ Remove-Item -Force _temp_crop_layer.py -ErrorAction SilentlyContinue
 **裁剪方式**：使用 Pillow 的 `getbbox()` 方法获取非透明内容的边界框，然后裁剪：
 
 ```powershell
+# Windows
 # 裁剪导出图片的透明区域（使用预置脚本）
 ~/.kiro/skills/design-to-code/.venv/Scripts/python.exe `
   ~/.kiro/skills/design-to-code/scripts/img_unify_size.py `
+  trim <图片路径>
+```
+
+```bash
+# macOS
+~/.kiro/skills/design-to-code/.venv-macos/bin/python3 \
+  ~/.kiro/skills/design-to-code/scripts/img_unify_size.py \
   trim <图片路径>
 ```
 
@@ -1378,7 +1466,13 @@ Remove-Item -Force _temp_crop_layer.py -ErrorAction SilentlyContinue
 **判断使用 Node.js 版还是 Python 版 Playwright：**
 
 ```powershell
+# Windows
 # 检查项目 Node.js 版本
+node --version
+```
+
+```bash
+# macOS
 node --version
 ```
 
@@ -1391,10 +1485,18 @@ node --version
 **方案一：Node.js 版（Node ≥ 18 时优先使用）**
 
 ```powershell
+# Windows
 # 检查是否已安装
 npx playwright --version
 
 # 未安装则安装
+npm install -D @playwright/test
+npx playwright install chromium
+```
+
+```bash
+# macOS
+npx playwright --version
 npm install -D @playwright/test
 npx playwright install chromium
 ```
@@ -1404,11 +1506,18 @@ npx playwright install chromium
 使用 design-to-code 虚拟环境安装 Playwright Python：
 
 ```powershell
+# Windows
 # 安装 playwright python 包
 ~/.kiro/skills/design-to-code/.venv/Scripts/pip.exe install playwright
 
 # 安装 Chromium 浏览器
 ~/.kiro/skills/design-to-code/.venv/Scripts/python.exe -m playwright install chromium
+```
+
+```bash
+# macOS（先确保已执行 setup_venv.py，使用 .venv-macos）
+~/.kiro/skills/design-to-code/.venv-macos/bin/pip3 install playwright
+~/.kiro/skills/design-to-code/.venv-macos/bin/python3 -m playwright install chromium
 ```
 
 **安装注意事项**：
@@ -1423,6 +1532,7 @@ npx playwright install chromium
    **端口选择规则**：默认使用 `8081` 端口启动，启动前检查端口是否已被占用，如果被占用则递增尝试 `8082`、`8083`...，直到找到可用端口。
 
    ```powershell
+   # Windows
    # 1. 从 8081 开始查找可用端口
    $PORT = 8081
    while (Get-NetTCPConnection -LocalPort $PORT -ErrorAction SilentlyContinue) {
@@ -1434,6 +1544,19 @@ npx playwright install chromium
    npm run dev -- --port $PORT    # Vite
    npm run serve -- --port $PORT  # Vue CLI
    $env:PORT=$PORT; npm start     # CRA / 通用
+   ```
+
+   ```bash
+   # macOS
+   PORT=8081
+   while lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; do
+     PORT=$((PORT + 1))
+   done
+   echo "✅ 使用端口: $PORT"
+
+   npm run dev -- --port "$PORT"    # Vite
+   npm run serve -- --port "$PORT"  # Vue CLI
+   PORT="$PORT" npm start           # CRA / 通用
    ```
 
    **注意事项**：
@@ -1602,11 +1725,18 @@ npx playwright install chromium
 
    **Python 版执行方式**：
    ```powershell
+   # Windows
    ~/.kiro/skills/design-to-code/.venv/Scripts/python.exe _playwright_verify_temp.py
+   ```
+
+   ```bash
+   # macOS
+   ~/.kiro/skills/design-to-code/.venv-macos/bin/python3 _playwright_verify_temp.py
    ```
 
 4. **执行截图**：
    ```powershell
+   # Windows
    # Node.js 版
    node _playwright_verify_temp.mjs
    
@@ -1614,9 +1744,16 @@ npx playwright install chromium
    ~/.kiro/skills/design-to-code/.venv/Scripts/python.exe _playwright_verify_temp.py
    ```
 
+   ```bash
+   # macOS
+   node _playwright_verify_temp.mjs
+   ~/.kiro/skills/design-to-code/.venv-macos/bin/python3 _playwright_verify_temp.py
+   ```
+
    **推荐方式：使用预置通用截图脚本**（通过 JSON 配置，无需每次生成临时脚本）：
    
    ```powershell
+   # Windows
    # 1. 使用文件写入工具创建截图配置文件 _screenshot_config_temp.json，内容如下：
    # {
    #   "url": "http://localhost:5173/page-path",
@@ -1643,6 +1780,18 @@ npx playwright install chromium
    
    # 3. 删除临时配置文件
    Remove-Item -Force _screenshot_config_temp.json -ErrorAction SilentlyContinue
+   ```
+
+   ```bash
+   # macOS
+   node ~/.kiro/skills/design-to-code/scripts/playwright_screenshot.mjs \
+     _screenshot_config_temp.json
+
+   ~/.kiro/skills/design-to-code/.venv-macos/bin/python3 \
+     ~/.kiro/skills/design-to-code/scripts/playwright_screenshot.py \
+     _screenshot_config_temp.json
+
+   rm -f _screenshot_config_temp.json
    ```
 
    **预置脚本支持的截图类型**：
@@ -1863,6 +2012,7 @@ npx playwright install chromium
    导出设计稿的完整渲染效果，保持设计稿原始图层可见性不变（即设计师交付时的视觉效果）：
 
    ```powershell
+   # Windows
    # 使用 ps-export 导出完整页面效果图（保持设计稿原始可见性）
    # powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.kiro\skills\ps-export\ps-export.ps1" "/path/to/design.psd"
    # 输出 export.png，重命名为 _design_fullpage_temp.png
@@ -1871,6 +2021,12 @@ npx playwright install chromium
    powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.kiro\skills\ps-export\ps-export.ps1" "/path/to/design.psd"
    # 输出 export.png 在 PSD 同级目录，重命名为 _design_fullpage_temp.png
    Rename-Item -Path "/path/to/design/export.png" -NewName "_design_fullpage_temp.png" -ErrorAction SilentlyContinue
+   ```
+
+   ```bash
+   # macOS
+   bash ~/.kiro/skills/ps-export/ps-export.sh "/path/to/design.psd"
+   mv "/path/to/design/export.png" "/path/to/design/_design_fullpage_temp.png"
    ```
 
    **关键点**：
@@ -1899,6 +2055,7 @@ npx playwright install chromium
    **步骤二：导出 composite 并裁剪到目标区域**
 
    ```powershell
+   # Windows
    # 使用 ps-export 隐藏不相关区域后导出完整页面
    # powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.kiro\skills\ps-export\ps-export.ps1" `
    #   "/path/to/design.psd" -Hide "Content Section","Footer Section","Popup Layer"
@@ -1908,6 +2065,12 @@ npx playwright install chromium
    powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.kiro\skills\ps-export\ps-export.ps1" `
      "/path/to/design.psd" -Hide "Content Section","Footer Section","Popup Layer"
    # 输出 export.png，重命名为 _design_composite_temp.png
+   ```
+
+   ```bash
+   # macOS
+   bash ~/.kiro/skills/ps-export/ps-export.sh \
+     "/path/to/design.psd" -Hide "Content Section","Footer Section","Popup Layer"
    ```
 
    ```python
@@ -1927,6 +2090,7 @@ npx playwright install chromium
    ```
 
    ```powershell
+   # Windows
    # 执行裁剪脚本
    ~/.kiro/skills/design-to-code/.venv/Scripts/python.exe _temp_crop_region.py `
      _design_composite_temp.png `
@@ -1935,6 +2099,15 @@ npx playwright install chromium
 
    # 3. 删除临时文件
    Remove-Item -Force _temp_crop_region.py, _design_composite_temp.png -ErrorAction SilentlyContinue
+   ```
+
+   ```bash
+   # macOS
+   ~/.kiro/skills/design-to-code/.venv-macos/bin/python3 _temp_crop_region.py \
+     _design_composite_temp.png \
+     _design_section_temp.png \
+     0 0 750 300
+   rm -f _temp_crop_region.py _design_composite_temp.png
    ```
 
    **关键点**：
@@ -1953,6 +2126,7 @@ npx playwright install chromium
    弹窗图层默认隐藏，需要临时设为可见再导出：
 
    ```powershell
+   # Windows
    # 使用 ps-export 显示弹窗图层后导出完整页面
    # powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.kiro\skills\ps-export\ps-export.ps1" `
    #   "/path/to/design.psd" -Show "PopupRule","PopupRule/mask"
@@ -1963,6 +2137,12 @@ npx playwright install chromium
    powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.kiro\skills\ps-export\ps-export.ps1" `
      "/path/to/design.psd" -Show "PopupRule","PopupRule/mask"
    # 输出 export.png，重命名为 _design_popup_temp.png
+   ```
+
+   ```bash
+   # macOS
+   bash ~/.kiro/skills/ps-export/ps-export.sh \
+     "/path/to/design.psd" -Show "PopupRule","PopupRule/mask"
    ```
 
    **关键点**：
@@ -2271,6 +2451,7 @@ npx playwright install chromium
 #### 清理执行
 
 ```powershell
+# Windows
 # 清理项目目录下的临时文件
 Remove-Item -Force _playwright_verify_temp.mjs -ErrorAction SilentlyContinue
 Remove-Item -Force _screenshot_*_temp.png -ErrorAction SilentlyContinue
@@ -2289,6 +2470,18 @@ Remove-Item -Recurse -Force $env:TEMP\psd_temp\ -ErrorAction SilentlyContinue
 
 # 清理验证通过的备份文件
 Remove-Item -Force <项目图片目录>/*.bak.* -ErrorAction SilentlyContinue
+```
+
+```bash
+# macOS
+rm -f _playwright_verify_temp.mjs
+rm -f _screenshot_*_temp.png
+rm -f _design_*_temp.png
+rm -f _temp_*.py
+rm -f <psd同级目录>/*_layers.json
+rm -f <psd同级目录>/export.png
+rm -rf "${TMPDIR:-/tmp}/psd_temp"
+rm -f <项目图片目录>/*.bak.*
 ```
 
 > ✅ **第十步完成** → 立即进入第十一步：输出摘要报告。⚠️ 此步骤不可跳过，必须输出报告。
@@ -2402,11 +2595,11 @@ Remove-Item -Force <项目图片目录>/*.bak.* -ErrorAction SilentlyContinue
 
 ### 调用 list-layers 和 ps-export skill
 
-- 图层结构读取使用 `list-layers` skill（Photoshop COM），脚本路径：`~/.kiro/skills/list-layers/list-layers.ps1`
+- 图层结构读取使用 `list-layers` skill。Windows 走 Photoshop COM，脚本路径：`~/.kiro/skills/list-layers/list-layers.ps1`。macOS 走 AppleScript，脚本路径：`~/.kiro/skills/list-layers/list-layers.sh`
   - 输出完整图层树结构（含隐藏图层），path 字段可直接用于 ps-export
   - **TEXT 类型图层会自动输出 `textStyle` 字段**（含 fontSize、fontName、fauxBold、fauxItalic、color、justification、leading、tracking、contents），可直接用于 CSS 样式提取，无需手动查看 Photoshop
-- PNG 导出使用 `ps-export` skill（Photoshop COM），脚本路径：`~/.kiro/skills/ps-export/ps-export.ps1`
-- 图像后处理使用 Pillow（通过 `~/.kiro/skills/design-to-code/.venv/Scripts/python.exe`）
+- PNG 导出使用 `ps-export` skill。Windows 脚本路径：`~/.kiro/skills/ps-export/ps-export.ps1`。macOS 脚本路径：`~/.kiro/skills/ps-export/ps-export.sh`
+- 图像后处理使用 Pillow。Windows 通过 `~/.kiro/skills/design-to-code/.venv/Scripts/python.exe`。macOS 通过 `~/.kiro/skills/design-to-code/.venv-macos/bin/python3`
 - 辅助脚本路径：`~/.kiro/skills/design-to-code/scripts/`（含 `img_unify_size.py`、`playwright_screenshot.*` 等）
 
 ### 调用 image-sizing-guide
@@ -2418,7 +2611,9 @@ Remove-Item -Force <项目图片目录>/*.bak.* -ErrorAction SilentlyContinue
 
 当需要对导出的图片进行二次处理时，使用 design-to-code 虚拟环境中的 Pillow 库：
 
-**Python 解释器**：`~/.kiro/skills/design-to-code/.venv/Scripts/python.exe`
+**Python 解释器**：
+- Windows：`~/.kiro/skills/design-to-code/.venv/Scripts/python.exe`
+- macOS：`~/.kiro/skills/design-to-code/.venv-macos/bin/python3`
 
 **优先使用预置脚本**：对于裁剪透明区域和多语种尺寸统一操作，优先使用预置脚本 `img_unify_size.py`（支持 trim / expand / unify 命令），无需编写临时脚本。仅当需要自定义的复杂图像处理逻辑时，才编写临时 Pillow 脚本。
 
@@ -2433,6 +2628,7 @@ Remove-Item -Force <项目图片目录>/*.bak.* -ErrorAction SilentlyContinue
 **使用方式**：编写临时 Python 脚本，调用 Pillow 处理：
 
 ```powershell
+# Windows / macOS 通用：用文件写入工具创建文件，不要在终端执行本段
 # 使用文件写入工具创建临时 .py 文件 _temp_img_process.py，内容如下：
 ```
 
@@ -2457,11 +2653,18 @@ print(f'✅ 尺寸调整完成: {target_size[0]}×{target_size[1]}')
 ```
 
 ```powershell
+# Windows
 # 执行
 ~/.kiro/skills/design-to-code/.venv/Scripts/python.exe _temp_img_process.py
 
 # 删除临时文件
 Remove-Item -Force _temp_img_process.py -ErrorAction SilentlyContinue
+```
+
+```bash
+# macOS
+~/.kiro/skills/design-to-code/.venv-macos/bin/python3 _temp_img_process.py
+rm -f _temp_img_process.py
 ```
 
 ### 配合 i18n-locale-converter
@@ -2508,6 +2711,7 @@ Remove-Item -Force _temp_img_process.py -ErrorAction SilentlyContinue
 
     **方案一（推荐）：使用文件写入工具创建临时 .py 文件再执行**
     ```powershell
+    # Windows / macOS 通用：用文件写入工具创建文件，不要在终端执行本段
     # 先用文件写入工具创建临时 Python 脚本 _temp_script.py，内容如下：
     ```
 
@@ -2524,6 +2728,7 @@ Remove-Item -Force _temp_img_process.py -ErrorAction SilentlyContinue
     ```
 
     ```powershell
+    # Windows
     # 执行
     ~/.kiro/skills/design-to-code/.venv/Scripts/python.exe _temp_script.py
 
@@ -2531,16 +2736,39 @@ Remove-Item -Force _temp_img_process.py -ErrorAction SilentlyContinue
     Remove-Item -Force _temp_script.py -ErrorAction SilentlyContinue
     ```
 
+    ```bash
+    # macOS
+    ~/.kiro/skills/design-to-code/.venv-macos/bin/python3 _temp_script.py
+    rm -f _temp_script.py
+    ```
+
     **方案二：纯单行（仅当逻辑极简时）**
     ```powershell
+    # Windows
     # ✅ 正确：真正的单行，无缩进无换行
     python -c "import json;data=json.load(open('file.json'));print(data['canvas_size'])"
     ```
 
-    **绝对禁止的写法**：
+    ```bash
+    # macOS，同样必须是真正的单行
+    python3 -c "import json;data=json.load(open('file.json'));print(data['canvas_size'])"
+    ```
+
+    **绝对禁止的写法**（Windows 和 macOS 都禁止）：
     ```powershell
+    # Windows
     # ❌ 错误：多行代码放在 -c 参数中
     python -c "
+    import json
+    data = json.load(open('file.json'))
+    print(data['key'])
+    "
+    ```
+
+    ```bash
+    # macOS
+    # ❌ 错误：多行代码放在 -c 参数中
+    python3 -c "
     import json
     data = json.load(open('file.json'))
     print(data['key'])

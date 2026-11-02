@@ -24,7 +24,8 @@
 //   ]
 // }
 //
-// path 字段可直接复制给 ps-export.ps1 的 -Hide / -Show / -Export 参数使用
+// path 字段可直接复制给 ps-export 的 -Hide / -Show / -Export 参数使用
+// Windows 入口：ps-export.ps1    macOS 入口：ps-export.sh
 //
 // ============================================================
 

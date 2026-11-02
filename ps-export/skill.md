@@ -9,20 +9,33 @@ description: 通过 Photoshop 导出 PSD/PSB 文件中的图层或完整页面�
 
 ## 功能说明
 
-该 skill 包含两个脚本协同工作：
+该 skill 包含三个脚本协同工作：
 
-1. **ps-export.ps1** — PowerShell 入口脚本，负责连接 Photoshop、打开文件、传递参数、调用 JSX 脚本
-2. **ps-export.jsx** — Photoshop JSX 脚本，负责操作图层可见性并导出 PNG
+1. **ps-export.ps1** — Windows PowerShell 入口脚本，负责连接 Photoshop、打开文件、传递参数、调用 JSX 脚本
+2. **ps-export.sh** — macOS 入口脚本，通过 AppleScript 完成与 ps1 相同的事情，参数名保持一致
+3. **ps-export.jsx** — Photoshop JSX 脚本，负责操作图层可见性并导出 PNG。Windows 和 macOS 共用，不要改它的调用约定
 
 ## 前置条件
+
+### Windows
 
 - Windows 系统
 - Adobe Photoshop 已安装并至少启动过一次（需要 COM 接口）
 - PowerShell 执行策略允许运行脚本
 
+### macOS
+
+- macOS
+- Adobe Photoshop 已安装。脚本会优先连接已经在运行的版本；没运行时按 `com.adobe.Photoshop` 启动
+- 首次调用需要在「系统设置 → 隐私与安全性 → 自动化」中允许终端控制 Photoshop
+- 使用 `ps-export.sh`，不要在 macOS 上执行 `ps-export.ps1`
+
 ## 使用方式
 
+### Windows
+
 ```powershell
+# Windows
 powershell -ExecutionPolicy Bypass -File "<skill_dir>\ps-export.ps1" "<PSD/PSB文件路径>" [-Hide "路径1","路径2"] [-Show "路径1"] [-Export "路径1","路径2"]
 ```
 
@@ -30,6 +43,20 @@ powershell -ExecutionPolicy Bypass -File "<skill_dir>\ps-export.ps1" "<PSD/PSB�
 ```
 C:\Users\yanliangming.OASOFFICE\.kiro\skills\ps-export
 ```
+
+### macOS
+
+```bash
+# macOS
+bash "<skill_dir>/ps-export.sh" "<PSD/PSB文件路径>" [-Hide "路径1","路径2"] [-Show "路径1"] [-Export "路径1","路径2"]
+```
+
+其中 `<skill_dir>` 为本 skill 所在目录：
+```
+~/.kiro/skills/ps-export
+```
+
+`-Hide`、`-Show`、`-Export` 在两个系统上含义相同，多个图层路径用英文逗号分隔。`--hide`、`--show`、`--export` 是 macOS 的等价写法。
 
 ## 参数说明
 
@@ -49,34 +76,66 @@ C:\Users\yanliangming.OASOFFICE\.kiro\skills\ps-export
 
 ## 示例
 
+以下示例中，Windows 命令保持原样。macOS 使用同一组参数，只更换入口脚本。
+
 ### 导出完整页面
 
 ```powershell
+# Windows
 powershell -ExecutionPolicy Bypass -File "C:\Users\yanliangming.OASOFFICE\.kiro\skills\ps-export\ps-export.ps1" "G:\1.psb"
+```
+
+```bash
+# macOS
+bash ~/.kiro/skills/ps-export/ps-export.sh "/path/to/1.psb"
 ```
 
 ### 隐藏图层后导出完整页面
 
 ```powershell
+# Windows
 powershell -ExecutionPolicy Bypass -File "C:\Users\yanliangming.OASOFFICE\.kiro\skills\ps-export\ps-export.ps1" "G:\1.psb" -Hide "Header/watermark","Footer/old"
+```
+
+```bash
+# macOS
+bash ~/.kiro/skills/ps-export/ps-export.sh "/path/to/1.psb" -Hide "Header/watermark","Footer/old"
 ```
 
 ### 显示图层后导出完整页面
 
 ```powershell
+# Windows
 powershell -ExecutionPolicy Bypass -File "C:\Users\yanliangming.OASOFFICE\.kiro\skills\ps-export\ps-export.ps1" "G:\1.psb" -Show "Header/new logo"
+```
+
+```bash
+# macOS
+bash ~/.kiro/skills/ps-export/ps-export.sh "/path/to/1.psb" -Show "Header/new logo"
 ```
 
 ### 导出指定图层为单独 PNG
 
 ```powershell
+# Windows
 powershell -ExecutionPolicy Bypass -File "C:\Users\yanliangming.OASOFFICE\.kiro\skills\ps-export\ps-export.ps1" "G:\1.psb" -Export "Header/banner","Content/icon"
+```
+
+```bash
+# macOS
+bash ~/.kiro/skills/ps-export/ps-export.sh "/path/to/1.psb" -Export "Header/banner","Content/icon"
 ```
 
 ### 组合使用：隐藏图层 + 导出指定图层
 
 ```powershell
+# Windows
 powershell -ExecutionPolicy Bypass -File "C:\Users\yanliangming.OASOFFICE\.kiro\skills\ps-export\ps-export.ps1" "G:\1.psb" -Hide "Header/watermark" -Export "Header/banner"
+```
+
+```bash
+# macOS
+bash ~/.kiro/skills/ps-export/ps-export.sh "/path/to/1.psb" -Hide "Header/watermark" -Export "Header/banner"
 ```
 
 ## 执行逻辑
@@ -100,7 +159,8 @@ powershell -ExecutionPolicy Bypass -File "C:\Users\yanliangming.OASOFFICE\.kiro\
 
 ## 注意事项
 
-- 脚本会通过 COM 自动连接 Photoshop，如果 Photoshop 未运行会自动启动
+- Windows 上脚本会通过 COM 自动连接 Photoshop，如果 Photoshop 未运行会自动启动
+- macOS 上脚本会通过 AppleScript 自动连接 Photoshop，如果 Photoshop 未运行会自动启动。装了多个版本时，优先使用已经打开的那一个
 - 打开文件时会保留所有图层，不会弹出对话框
 - 导出完成后会自动还原所有图层可见性
 - 支持 .psd 和 .psb 格式

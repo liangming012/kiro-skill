@@ -3,9 +3,9 @@
 // Photoshop JSX 脚本：导出图层或完整页面为 PNG
 // ============================================================
 //
-// 使用示例（通过 ps-export.ps1 调用）：
+// 使用示例：
 //
-//   # 导出完整页面：
+// Windows（ps-export.ps1）：
 //   powershell -ExecutionPolicy Bypass -File "G:\ps-export.ps1" "G:\1.psb"
 //
 //   # 隐藏图层后导出完整页面：
@@ -20,7 +20,11 @@
 //   # 组合使用：隐藏图层 + 导出指定图层：
 //   powershell -ExecutionPolicy Bypass -File "G:\ps-export.ps1" "G:\1.psb" -Hide "Header/watermark" -Export "Header/banner"
 //
-// 参数说明（由 PowerShell 传入的 JSON 字符串）：
+// macOS（ps-export.sh，参数名与上面相同）：
+//   bash ps-export.sh "/path/to/1.psb"
+//   bash ps-export.sh "/path/to/1.psb" -Hide "Header/watermark" -Export "Header/banner"
+//
+// 参数说明（由入口脚本传入的 JSON 字符串）：
 //   {
 //     "hide": ["图层路径", ...],      // 导出前隐藏的图层
 //     "show": ["图层路径", ...],      // 导出前显示的图层
